@@ -1,0 +1,17 @@
+node_modules/
+dist/
+target/
+.anchor/
+.DS_Store
+*.log
+
+# Wallet keys - NEVER commit these
+*.json
+!package.json
+!tsconfig.json
+!Cargo.toml
+!Anchor.toml
+
+# IDE
+.vscode/
+.idea/
