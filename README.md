@@ -1,190 +1,76 @@
-<div align="center">
+# QuantumVault
 
-# 🛡️ QuantumVault
+QuantumVault is a post-quantum migration infrastructure for the Solana blockchain. It provides an application-layer vault that protects digital assets against "Harvest Now, Decrypt Later" quantum computing threats by requiring a hybrid dual-signature authorization for all withdrawals.
 
-**Post-Quantum Migration Infrastructure for Solana**
+## Overview
 
-[![Solana](https://img.shields.io/badge/Solana-Devnet-9945FF?logo=solana)](https://solana.com)
-[![NIST](https://img.shields.io/badge/NIST-FIPS%20204-00529B)](https://csrc.nist.gov/pubs/fips/204/final)
-[![ML-DSA-44](https://img.shields.io/badge/Algorithm-ML--DSA--44-00C853)](https://pq-crystals.org/dilithium/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+Current blockchain wallets, including those on Solana, rely on elliptic curve cryptography (like Ed25519) which is vulnerable to Shor's algorithm on a sufficiently powerful quantum computer. While the network itself may eventually upgrade, individual wallets remain vulnerable during the transition period. 
 
-*Defend against "Harvest Now, Decrypt Later" attacks on Solana.*
+QuantumVault addresses this by wrapping assets in a smart contract that enforces a secondary, quantum-resistant signature.
 
-</div>
+### Security Model
 
----
+- **Ed25519 (Solana Native)**: Provides current cryptographic security.
+- **ML-DSA-44 (FIPS 204)**: Provides NIST Level 2 quantum-resistant security.
+- **On-chain Enforcement**: The smart contract verifies the Ed25519 signature natively and enforces PQC identity by matching the ML-DSA-44 public key hash.
 
-## 🎯 Problem
+Even if an attacker compromises a user's Ed25519 private key using a quantum computer, they cannot authorize a withdrawal without the corresponding ML-DSA-44 private key.
 
-Quantum computers running Shor's algorithm will break Ed25519 — the signature scheme securing every Solana wallet. Adversaries are already recording on-chain public keys today, waiting for quantum hardware to mature.
+## Architecture
 
-**The threat isn't sudden — it's gradual.** Early quantum computers will target individual high-value wallets (taking hours to break one key) while the network still operates. This transition window could last years.
+1. **Frontend Client**: Generates and manages the ML-DSA-44 key pair locally. Constructs withdrawal messages and signs them with both the traditional Solana wallet and the ML-DSA-44 key.
+2. **Smart Contract (Anchor)**: Manages the vault state, validates the traditional signature, verifies the PQC public key hash, and logs the PQC signature hash for auditing.
 
-## 💡 Solution
+## Tech Stack
 
-QuantumVault provides an **application-layer quantum-safe vault** that protects assets during the critical migration window:
+- **Smart Contract**: Rust, Anchor Framework
+- **Frontend**: React, TypeScript, Vite
+- **Cryptography**: `@noble/post-quantum` for ML-DSA-44 (CRYSTALS-Dilithium)
 
-| Layer | Mechanism | Purpose |
-|-------|-----------|---------|
-| **Ed25519** | Solana native signature (Phantom) | Current security |
-| **ML-DSA-44** | NIST FIPS 204 lattice-based signature | Quantum-resistant security |
-| **On-chain hash binding** | PQC pubkey hash verified by smart contract | Identity enforcement |
-
-**Even if a quantum computer breaks your Ed25519 key, your vault assets remain safe** — the attacker cannot produce the ML-DSA-44 authorization required by the smart contract.
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    User's Browser                       │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │ Phantom       │  │ ML-DSA-44    │  │ QuantumVault  │  │
-│  │ Wallet        │  │ Key Manager  │  │ Frontend      │  │
-│  │ (Ed25519)     │  │ (FIPS 204)   │  │ (React)       │  │
-│  └──────┬───────┘  └──────┬───────┘  └───────┬───────┘  │
-│         │                 │                   │          │
-│         └────────┬────────┘                   │          │
-│                  │ Dual Signature              │          │
-│                  ▼                             │          │
-│         ┌──────────────────┐                  │          │
-│         │ Transaction      │◄─────────────────┘          │
-│         │ Builder          │                             │
-│         └────────┬─────────┘                             │
-└──────────────────┼───────────────────────────────────────┘
-                   │
-                   ▼  Solana Devnet
-         ┌─────────────────────┐
-         │  QuantumVault       │
-         │  Smart Contract     │
-         │                     │
-         │  ✓ Ed25519 check    │
-         │  ✓ PQC hash match   │
-         │  ✓ Balance check    │
-         │  ✓ Lock status      │
-         │  📜 Audit trail     │
-         └─────────────────────┘
-```
-
-## ✨ Features
-
-- **🔐 Dual-Signature Withdrawals** — Ed25519 + ML-DSA-44 required for every withdrawal
-- **🔮 Real PQC Cryptography** — NIST FIPS 204 ML-DSA-44 (CRYSTALS-Dilithium Level 2)
-- **📊 Visual Signing Pipeline** — 6-step real-time visualization of the dual-signature process
-- **🔒 Emergency Lock** — Instantly freeze vault if Ed25519 key compromise is suspected
-- **🔑 Key Rotation** — Rotate PQC keys without moving assets
-- **📜 On-Chain Audit Trail** — Every withdrawal stores PQC signature hash on Solana
-- **💾 Key Persistence** — PQC keys safely stored in browser localStorage
-- **📈 Security Scoring** — Real-time quantum readiness assessment (A+ to F)
-
-## 🚀 Quick Start
+## Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) ≥ 18
-- [Phantom Wallet](https://phantom.app/) browser extension
-- [Rust](https://rustup.rs/) + [Solana CLI](https://docs.solanalabs.com/cli/install) + [Anchor](https://www.anchor-lang.com/) (for contract deployment)
+- Node.js >= 18
+- Rust and Cargo
+- Solana CLI
+- Anchor CLI (v0.30.1 or later)
+- Phantom Wallet extension
 
-### Frontend
+### Local Development
 
-```bash
-# Install dependencies
-npm install
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/quantum-vault.git
+   cd quantum-vault
+   ```
 
-# Start development server
-npm run dev
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-# Build for production
-npm run build
-```
+3. **Build the smart contract**
+   ```bash
+   anchor build
+   ```
 
-### Smart Contract
+4. **Deploy to Solana Devnet**
+   ```bash
+   anchor deploy --provider.cluster devnet --program-name quantum_vault --program-keypair target/deploy/quantum_vault-keypair.json
+   ```
 
-```bash
-# Build the Anchor program
-anchor build
+5. **Update configuration**
+   After deployment, update the generated Program ID in the following files:
+   - `programs/quantum_vault/src/lib.rs` (in the `declare_id!` macro)
+   - `Anchor.toml` (under `[programs.devnet]`)
+   - `src/solana.ts` (the `PROGRAM_ID` constant)
 
-# Deploy to Devnet
-anchor deploy --provider.cluster devnet \
-  --program-name quantum_vault \
-  --program-keypair target/deploy/quantum_vault-keypair.json
-```
+6. **Start the frontend**
+   ```bash
+   npm run dev
+   ```
 
-### Configuration
+## License
 
-Update the Program ID in three files after deployment:
-
-1. `programs/quantum_vault/src/lib.rs` → `declare_id!("YOUR_PROGRAM_ID")`
-2. `Anchor.toml` → `quantum_vault = "YOUR_PROGRAM_ID"`
-3. `src/solana.ts` → `PROGRAM_ID = new PublicKey("YOUR_PROGRAM_ID")`
-
-## 📁 Project Structure
-
-```
-quantum-vault/
-├── programs/quantum_vault/src/
-│   └── lib.rs              # Anchor smart contract (vault, deposit, withdraw, lock)
-├── src/
-│   ├── App.tsx             # Main React application with vault UI
-│   ├── pqc.ts              # ML-DSA-44 key management & signing module
-│   ├── solana.ts           # Solana on-chain interaction (PDA, instructions, TX)
-│   ├── index.css           # Cyberpunk-themed UI styles
-│   └── main.tsx            # React entry point
-├── Anchor.toml             # Anchor framework configuration
-├── Cargo.toml              # Rust workspace configuration
-├── package.json            # Node.js dependencies
-└── vite.config.ts          # Vite build configuration
-```
-
-## 🔬 Technical Details
-
-### ML-DSA-44 (FIPS 204)
-
-| Parameter | Value |
-|-----------|-------|
-| Algorithm | CRYSTALS-Dilithium Level 2 |
-| NIST Standard | FIPS 204 (finalized August 2024) |
-| Public Key Size | 1,312 bytes |
-| Signature Size | 2,420 bytes |
-| Secret Key Size | 2,560 bytes |
-| Security Level | NIST Level 2 (128-bit quantum) |
-| Hardness | Module-LWE / Module-SIS |
-
-### On-Chain Verification Model
-
-Since Solana's runtime doesn't natively support ML-DSA-44 verification, QuantumVault uses a **hash-commitment model**:
-
-1. **Client-side**: Full ML-DSA-44 sign + verify (real FIPS 204 cryptography)
-2. **On-chain**: PQC public key hash matching (identity enforcement)
-3. **On-chain**: PQC signature hash storage (tamper-proof audit trail)
-4. **On-chain**: Ed25519 signature verification (Solana native)
-
-This architecture is designed as **migration infrastructure** — when Solana adds native PQC syscalls, the contract can be upgraded to perform full on-chain ML-DSA verification.
-
-## 🛣️ Roadmap
-
-- [x] ML-DSA-44 key generation & signing
-- [x] Dual-signature vault smart contract
-- [x] Visual signing pipeline
-- [x] On-chain PQC identity verification
-- [x] Emergency lock / unlock
-- [x] Key persistence (localStorage)
-- [ ] Hardware wallet integration (Ledger)
-- [ ] Multi-sig vault governance
-- [ ] ML-KEM key encapsulation for encrypted vault metadata
-- [ ] Native Solana PQC syscall integration (when available)
-
-## 🏆 Colosseum Frontier Hackathon
-
-QuantumVault is built for the **Security Tools** track. It addresses the inevitable need for post-quantum cryptography migration in the Solana ecosystem, providing infrastructure that users can adopt today to protect against tomorrow's quantum threats.
-
-## 📄 License
-
-MIT
-
----
-
-<div align="center">
-<strong>QuantumVault</strong> — Because quantum computing isn't a question of <em>if</em>, but <em>when</em>.
-</div>
+This project is licensed under the MIT License - see the LICENSE file for details.

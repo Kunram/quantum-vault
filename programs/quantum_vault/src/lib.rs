@@ -3,17 +3,10 @@ use anchor_lang::system_program;
 
 declare_id!("57C4xcB2fYynWh2AUyUHubs4EHFTdbUQiFCkFe26yeku");
 
-/// QuantumVault: A quantum-resistant asset vault for Solana.
-///
-/// Users deposit SOL into a program-owned vault protected by dual signatures:
-///   1. Ed25519 (Solana native) — current security
-///   2. ML-DSA-44 (FIPS 204)   — quantum-resistant security (hash stored on-chain)
-
 #[program]
 pub mod quantum_vault {
     use super::*;
 
-    /// Initialize a quantum-safe vault for the user.
     pub fn initialize_vault(
         ctx: Context<InitializeVault>,
         pqc_pubkey_hash: [u8; 32],
@@ -35,11 +28,9 @@ pub mod quantum_vault {
         Ok(())
     }
 
-    /// Deposit SOL into the quantum-safe vault.
     pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         require!(amount > 0, VaultError::ZeroAmount);
 
-        // Transfer SOL from depositor to vault account
         let cpi_ctx = CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
             system_program::Transfer {
@@ -59,11 +50,10 @@ pub mod quantum_vault {
         Ok(())
     }
 
-    /// Withdraw SOL from the vault. Requires Ed25519 + ML-DSA-44 dual authorization.
     pub fn withdraw(
         ctx: Context<Withdraw>,
         amount: u64,
-        pqc_pubkey_hash: [u8; 32], // Must match the registered PQC key hash
+        pqc_pubkey_hash: [u8; 32],
         pqc_sig_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
@@ -73,16 +63,11 @@ pub mod quantum_vault {
         require!(!vault.is_locked, VaultError::VaultLocked);
         require!(vault.balance >= amount, VaultError::InsufficientBalance);
 
-        // On-chain PQC identity verification:
-        // Caller must prove they possess the registered PQC public key
-        // by providing its hash. Without the original 1312-byte key,
-        // an attacker who only stole Ed25519 cannot compute this hash.
         require!(
             vault.pqc_pubkey_hash == pqc_pubkey_hash,
             VaultError::PQCKeyMismatch
         );
 
-        // Store withdrawal record
         let withdrawal = &mut ctx.accounts.withdrawal_record;
         withdrawal.vault = vault.key();
         withdrawal.recipient = ctx.accounts.recipient.key();
@@ -92,7 +77,6 @@ pub mod quantum_vault {
         withdrawal.timestamp = Clock::get()?.unix_timestamp;
         withdrawal.bump = ctx.bumps.withdrawal_record;
 
-        // Transfer SOL: debit from vault (program-owned), credit to recipient
         **vault.to_account_info().try_borrow_mut_lamports()? -= amount;
         **ctx.accounts.recipient.try_borrow_mut_lamports()? += amount;
 
@@ -101,29 +85,24 @@ pub mod quantum_vault {
         vault.withdrawal_count = vault.withdrawal_count.checked_add(1).ok_or(VaultError::Overflow)?;
         vault.last_activity = Clock::get()?.unix_timestamp;
 
-        msg!("Withdrawn {} lamports with PQC dual-auth. Remaining: {}", amount, vault.balance);
+        msg!("Withdrawn {} lamports. Remaining: {}", amount, vault.balance);
         Ok(())
     }
 
-    /// Emergency lock the vault.
     pub fn emergency_lock(ctx: Context<VaultOwnerAction>) -> Result<()> {
         let vault = &mut ctx.accounts.vault;
         vault.is_locked = true;
         vault.last_activity = Clock::get()?.unix_timestamp;
-        msg!("EMERGENCY: Vault locked");
         Ok(())
     }
 
-    /// Unlock the vault.
     pub fn unlock_vault(ctx: Context<VaultOwnerAction>) -> Result<()> {
         let vault = &mut ctx.accounts.vault;
         vault.is_locked = false;
         vault.last_activity = Clock::get()?.unix_timestamp;
-        msg!("Vault unlocked");
         Ok(())
     }
 
-    /// Rotate the PQC public key.
     pub fn rotate_pqc_key(
         ctx: Context<VaultOwnerAction>,
         new_pqc_pubkey_hash: [u8; 32],
@@ -131,12 +110,9 @@ pub mod quantum_vault {
         let vault = &mut ctx.accounts.vault;
         vault.pqc_pubkey_hash = new_pqc_pubkey_hash;
         vault.last_activity = Clock::get()?.unix_timestamp;
-        msg!("PQC key rotated");
         Ok(())
     }
 }
-
-// ─── Account Structures ──────────────────────────────────────────────────────
 
 #[derive(Accounts)]
 pub struct InitializeVault<'info> {
@@ -148,10 +124,8 @@ pub struct InitializeVault<'info> {
         bump
     )]
     pub vault: Account<'info, Vault>,
-
     #[account(mut)]
     pub owner: Signer<'info>,
-
     pub system_program: Program<'info, System>,
 }
 
@@ -163,10 +137,8 @@ pub struct Deposit<'info> {
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,
-
     #[account(mut)]
     pub depositor: Signer<'info>,
-
     pub system_program: Program<'info, System>,
 }
 
@@ -180,7 +152,6 @@ pub struct Withdraw<'info> {
         has_one = owner
     )]
     pub vault: Account<'info, Vault>,
-
     #[account(
         init,
         payer = owner,
@@ -189,14 +160,11 @@ pub struct Withdraw<'info> {
         bump
     )]
     pub withdrawal_record: Account<'info, WithdrawalRecord>,
-
     /// CHECK: Recipient of the withdrawal
     #[account(mut)]
     pub recipient: AccountInfo<'info>,
-
     #[account(mut)]
     pub owner: Signer<'info>,
-
     pub system_program: Program<'info, System>,
 }
 
@@ -209,11 +177,8 @@ pub struct VaultOwnerAction<'info> {
         has_one = owner
     )]
     pub vault: Account<'info, Vault>,
-
     pub owner: Signer<'info>,
 }
-
-// ─── Data Accounts ───────────────────────────────────────────────────────────
 
 #[account]
 pub struct Vault {
@@ -249,8 +214,6 @@ impl WithdrawalRecord {
     pub const SPACE: usize = 8 + 32 + 32 + 8 + 32 + 8 + 8 + 1;
 }
 
-// ─── Errors ──────────────────────────────────────────────────────────────────
-
 #[error_code]
 pub enum VaultError {
     #[msg("Deposit amount must be greater than zero.")]
@@ -259,7 +222,7 @@ pub enum VaultError {
     InsufficientBalance,
     #[msg("Vault is locked.")]
     VaultLocked,
-    #[msg("PQC public key hash mismatch. You must provide the registered quantum-resistant key.")]
+    #[msg("PQC public key hash mismatch.")]
     PQCKeyMismatch,
     #[msg("Arithmetic overflow.")]
     Overflow,

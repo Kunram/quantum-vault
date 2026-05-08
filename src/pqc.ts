@@ -1,23 +1,12 @@
-/**
- * QuantumVault PQC Module
- * ML-DSA-44 (Dilithium Level 2) — FIPS 204
- * 
- * Key sizes:
- *   - Public key:  1312 bytes
- *   - Secret key:  2560 bytes
- *   - Signature:   2420 bytes
- */
 import { ml_dsa44 } from '@noble/post-quantum/ml-dsa';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface PQCKeyPair {
   publicKey: Uint8Array;
   secretKey: Uint8Array;
   publicKeyHex: string;
-  fingerprint: string; // SHA256 of public key, first 16 hex chars
+  fingerprint: string;
   createdAt: number;
 }
 
@@ -42,7 +31,7 @@ export interface PQCVerifyResult {
 export interface VaultWithdrawalAuth {
   vaultAddress: string;
   recipientAddress: string;
-  amount: number; // lamports
+  amount: number;
   nonce: number;
   pqcSignature: Uint8Array;
   signedMessage: Uint8Array;
@@ -52,12 +41,8 @@ export interface VaultWithdrawalAuth {
 const ALGORITHM = 'ML-DSA-44';
 const SECURITY_LEVEL = 'NIST Level 2';
 const NIST_STANDARD = 'FIPS 204';
+const STORAGE_KEY = 'quantumvault_pqc_keypair';
 
-// ─── Key Management ──────────────────────────────────────────────────────────
-
-/**
- * Generate a new ML-DSA-44 key pair
- */
 export function generateKeyPair(): PQCKeyPair {
   const seed = crypto.getRandomValues(new Uint8Array(32));
   const keys = ml_dsa44.keygen(seed);
@@ -71,14 +56,10 @@ export function generateKeyPair(): PQCKeyPair {
     createdAt: Date.now(),
   };
 
-  // Auto-save to localStorage
   saveKeyPair(kp);
   return kp;
 }
 
-const STORAGE_KEY = 'quantumvault_pqc_keypair';
-
-/** Save PQC key pair to localStorage */
 export function saveKeyPair(kp: PQCKeyPair): void {
   try {
     const data = {
@@ -88,20 +69,20 @@ export function saveKeyPair(kp: PQCKeyPair): void {
       createdAt: kp.createdAt,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) { console.error('Failed to save PQC key:', e); }
+  } catch (e) {
+    console.error('Failed to save PQC key:', e);
+  }
 }
 
-/** Load PQC key pair from localStorage */
 export function loadKeyPair(): PQCKeyPair | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
+    
     const data = JSON.parse(raw);
-    const publicKey = hexToBytes(data.publicKey);
-    const secretKey = hexToBytes(data.secretKey);
     return {
-      publicKey,
-      secretKey,
+      publicKey: hexToBytes(data.publicKey),
+      secretKey: hexToBytes(data.secretKey),
       publicKeyHex: data.publicKey,
       fingerprint: data.fingerprint,
       createdAt: data.createdAt,
@@ -112,23 +93,14 @@ export function loadKeyPair(): PQCKeyPair | null {
   }
 }
 
-/** Clear PQC key pair from localStorage */
 export function clearKeyPair(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-/**
- * Derive a deterministic fingerprint from a public key
- */
 export function getFingerprint(publicKey: Uint8Array): string {
   return bytesToHex(sha256(publicKey)).slice(0, 16);
 }
 
-// ─── Signing ─────────────────────────────────────────────────────────────────
-
-/**
- * Sign a message using ML-DSA-44
- */
 export function signMessage(message: Uint8Array, secretKey: Uint8Array): PQCSignatureResult {
   const signature = ml_dsa44.sign(secretKey, message);
 
@@ -143,13 +115,6 @@ export function signMessage(message: Uint8Array, secretKey: Uint8Array): PQCSign
   };
 }
 
-/**
- * Create a withdrawal authorization message and sign it.
- * 
- * The message format is: vault_pubkey(32) | recipient(32) | amount(8 LE) | nonce(8 LE)
- * This ensures the PQC signature binds to a specific withdrawal request,
- * preventing replay and modification attacks.
- */
 export function signWithdrawal(
   vaultAddress: string,
   recipientAddress: string,
@@ -157,10 +122,7 @@ export function signWithdrawal(
   nonce: number,
   secretKey: Uint8Array,
 ): VaultWithdrawalAuth {
-  // Construct the canonical withdrawal message
   const message = buildWithdrawalMessage(vaultAddress, recipientAddress, amountLamports, nonce);
-
-  // Sign with ML-DSA-44
   const signature = ml_dsa44.sign(secretKey, message);
 
   return {
@@ -174,10 +136,6 @@ export function signWithdrawal(
   };
 }
 
-/**
- * Build the canonical withdrawal message that gets signed by ML-DSA-44.
- * Format: "QuantumVault:Withdraw:" | vault_hash(32) | recipient_hash(32) | amount(8 LE) | nonce(8 LE)
- */
 export function buildWithdrawalMessage(
   vaultAddress: string,
   recipientAddress: string,
@@ -190,15 +148,15 @@ export function buildWithdrawalMessage(
 
   const amountBytes = new Uint8Array(8);
   const amountView = new DataView(amountBytes.buffer);
-  amountView.setBigUint64(0, BigInt(amountLamports), true); // little-endian
+  amountView.setBigUint64(0, BigInt(amountLamports), true);
 
   const nonceBytes = new Uint8Array(8);
   const nonceView = new DataView(nonceBytes.buffer);
   nonceView.setBigUint64(0, BigInt(nonce), true);
 
-  // Concatenate all parts
   const total = new Uint8Array(prefix.length + 32 + 32 + 8 + 8);
   let offset = 0;
+  
   total.set(prefix, offset); offset += prefix.length;
   total.set(vaultHash, offset); offset += 32;
   total.set(recipientHash, offset); offset += 32;
@@ -208,11 +166,6 @@ export function buildWithdrawalMessage(
   return total;
 }
 
-// ─── Verification ────────────────────────────────────────────────────────────
-
-/**
- * Verify an ML-DSA-44 signature
- */
 export function verifySignature(
   signature: Uint8Array,
   message: Uint8Array,
@@ -230,14 +183,10 @@ export function verifySignature(
   };
 }
 
-/**
- * Verify a withdrawal authorization
- */
 export function verifyWithdrawal(
   auth: VaultWithdrawalAuth,
   publicKey: Uint8Array,
 ): { valid: boolean; details: string } {
-  // Reconstruct the message to verify
   const expectedMessage = buildWithdrawalMessage(
     auth.vaultAddress,
     auth.recipientAddress,
@@ -245,33 +194,26 @@ export function verifyWithdrawal(
     auth.nonce,
   );
 
-  // Verify message integrity
   if (bytesToHex(expectedMessage) !== bytesToHex(auth.signedMessage)) {
-    return { valid: false, details: 'Message integrity check failed — possible tampering' };
+    return { valid: false, details: 'Message integrity check failed' };
   }
 
-  // Verify PQC signature
   const valid = ml_dsa44.verify(publicKey, auth.signedMessage, auth.pqcSignature);
 
   return {
     valid,
     details: valid
-      ? `Withdrawal of ${(auth.amount / 1e9).toFixed(4)} SOL verified with ML-DSA-44`
-      : 'PQC signature verification failed — unauthorized withdrawal attempt',
+      ? `Withdrawal of ${(auth.amount / 1e9).toFixed(4)} SOL verified`
+      : 'Signature verification failed',
   };
 }
 
-// ─── Utility ─────────────────────────────────────────────────────────────────
-
-/**
- * Calculate quantum security score based on vault configuration
- */
 export function calculateSecurityScore(config: {
   hasPQCKey: boolean;
   hasVault: boolean;
   vaultBalance: number;
   recentWithdrawals: number;
-  keyAge: number; // days
+  keyAge: number;
 }): { score: number; grade: string; recommendations: string[] } {
   let score = 0;
   const recommendations: string[] = [];
@@ -279,25 +221,25 @@ export function calculateSecurityScore(config: {
   if (config.hasPQCKey) {
     score += 40;
   } else {
-    recommendations.push('Generate a quantum-resistant ML-DSA-44 key pair');
+    recommendations.push('Generate an ML-DSA-44 key pair');
   }
 
   if (config.hasVault) {
     score += 30;
   } else {
-    recommendations.push('Create a QuantumVault to protect your assets');
+    recommendations.push('Create a vault instance');
   }
 
   if (config.vaultBalance > 0) {
     score += 15;
   } else {
-    recommendations.push('Deposit SOL into your vault for quantum protection');
+    recommendations.push('Fund your vault');
   }
 
   if (config.keyAge < 90) {
     score += 10;
   } else {
-    recommendations.push('Rotate your PQC key — current key is over 90 days old');
+    recommendations.push('Rotate PQC key (older than 90 days)');
   }
 
   if (config.recentWithdrawals < 10) {
@@ -314,9 +256,6 @@ export function calculateSecurityScore(config: {
   return { score, grade, recommendations };
 }
 
-/**
- * Get algorithm info for display
- */
 export function getAlgorithmInfo() {
   return {
     name: ALGORITHM,
@@ -336,9 +275,6 @@ export function getAlgorithmInfo() {
   };
 }
 
-/**
- * Format lamports to SOL display string
- */
 export function lamportsToSol(lamports: number): string {
   return (lamports / 1e9).toFixed(4);
 }
