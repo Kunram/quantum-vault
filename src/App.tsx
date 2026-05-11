@@ -141,6 +141,12 @@ function App() {
     }
   }, [walletAddress]);
 
+  useEffect(() => {
+    if (walletAddress) {
+      refreshVault();
+    }
+  }, [walletAddress, refreshVault]);
+
   const initVault = useCallback(async () => {
     if (!keyPair || !walletAddress) return;
     setIsLoading(true);
