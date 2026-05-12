@@ -3,6 +3,7 @@ import { PublicKey } from '@solana/web3.js';
 import {
   generateKeyPair,
   loadKeyPair,
+  clearKeyPair,
   signWithdrawal,
   verifyWithdrawal,
   getAlgorithmInfo,
@@ -113,6 +114,11 @@ function App() {
     } finally {
       setIsGenerating(false);
     }
+  }, []);
+
+  const handleClearKey = useCallback(() => {
+    clearKeyPair();
+    setKeyPair(null);
   }, []);
 
   const refreshVault = useCallback(async () => {
@@ -440,6 +446,23 @@ function App() {
                   • {r}
                 </div>
               ))}
+            </div>
+          )}
+
+          {keyPair && (
+            <div className="card" style={{ marginBottom: '24px' }}>
+              <div className="card-header">
+                <div className="card-icon cyan">🔑</div>
+                <div>
+                  <div className="card-title">Local PQC Key</div>
+                  <div className="card-description">{keyPair.fingerprint}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: '12px' }}>
+                <button className="btn btn-secondary btn-sm" onClick={handleClearKey}>
+                  Clear Local Key
+                </button>
+              </div>
             </div>
           )}
 
