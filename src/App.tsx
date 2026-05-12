@@ -9,6 +9,9 @@ import {
   getAlgorithmInfo,
   calculateSecurityScore,
   lamportsToSol,
+  saveKeyPair,
+  bytesToHex,
+  hexToBytes,
   type PQCKeyPair,
   type VaultWithdrawalAuth,
 } from './pqc';
@@ -119,6 +122,55 @@ function App() {
   const handleClearKey = useCallback(() => {
     clearKeyPair();
     setKeyPair(null);
+  }, []);
+
+  const handleDownloadKey = useCallback(() => {
+    if (!keyPair) return;
+    const data = JSON.stringify({
+      publicKey: keyPair.publicKeyHex,
+      secretKey: bytesToHex(keyPair.secretKey),
+      fingerprint: keyPair.fingerprint,
+      createdAt: keyPair.createdAt,
+      algorithm: 'ML-DSA-44'
+    }, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `quantum_vault_pqc_${keyPair.fingerprint.slice(0, 8)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [keyPair]);
+
+  const handleImportKey = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const data = JSON.parse(content);
+        if (data.algorithm !== 'ML-DSA-44' || !data.secretKey || !data.publicKey) {
+          throw new Error('Invalid Keystore format');
+        }
+        const kp: PQCKeyPair = {
+          publicKey: hexToBytes(data.publicKey),
+          secretKey: hexToBytes(data.secretKey),
+          publicKeyHex: data.publicKey,
+          fingerprint: data.fingerprint,
+          createdAt: data.createdAt,
+        };
+        saveKeyPair(kp);
+        setKeyPair(kp);
+        alert('PQC Keystore imported successfully!');
+      } catch (err: any) {
+        alert('Import failed: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   }, []);
 
   const refreshVault = useCallback(async () => {
@@ -406,9 +458,15 @@ function App() {
               <button className="btn btn-primary" onClick={connectWallet}>Connect Wallet</button>
             )}
             {walletAddress && !keyPair && (
-              <button className="btn btn-primary" onClick={handleGenerateKey} disabled={isGenerating}>
-                {isGenerating ? 'Generating...' : 'Generate ML-DSA-44 Key'}
-              </button>
+              <>
+                <button className="btn btn-primary" onClick={handleGenerateKey} disabled={isGenerating}>
+                  {isGenerating ? 'Generating...' : 'Generate ML-DSA-44 Key'}
+                </button>
+                <div style={{ position: 'relative' }}>
+                  <input type="file" accept=".json" onChange={handleImportKey} style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} title="Import Keystore" />
+                  <button className="btn btn-secondary">Import Keystore</button>
+                </div>
+              </>
             )}
             {walletAddress && keyPair && !vault.initialized && (
               <button className="btn btn-primary" onClick={initVault}>Initialize QuantumVault</button>
@@ -458,8 +516,11 @@ function App() {
                   <div className="card-description">{keyPair.fingerprint}</div>
                 </div>
               </div>
-              <div style={{ marginTop: '12px' }}>
-                <button className="btn btn-secondary btn-sm" onClick={handleClearKey}>
+              <div style={{ marginTop: '12px', display: 'flex', gap: '12px' }}>
+                <button className="btn btn-secondary btn-sm" onClick={handleDownloadKey}>
+                  Download Backup (JSON)
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={handleClearKey} style={{ borderColor: 'var(--accent-red)', color: 'var(--accent-red)' }}>
                   Clear Local Key
                 </button>
               </div>
