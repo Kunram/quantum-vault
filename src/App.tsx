@@ -341,7 +341,15 @@ function App() {
       setRecipientAddr('');
       await refreshVault();
     } catch (err: any) {
-      setSignSteps(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'error', detail: err.message } : s));
+      const isChainError = err.message.includes('custom program error') || err.message.includes('Simulation failed');
+      setSignSteps(prev => prev.map((s, i) => {
+        if (isChainError) {
+          if (i === 3) return { ...s, status: 'done', detail: 'Ed25519 signature applied' };
+          if (i === 4) return { ...s, status: 'error', detail: err.message };
+          return s;
+        }
+        return s.status === 'active' ? { ...s, status: 'error', detail: err.message } : s;
+      }));
     } finally {
       setIsLoading(false);
     }
